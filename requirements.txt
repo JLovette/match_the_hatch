@@ -1,1 +1,5 @@
 streamlit==1.8.1
+openai==0.28.1
+streamlit-aggrid==*
+pandas==*
+numpy==*
