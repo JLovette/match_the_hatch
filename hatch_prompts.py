@@ -1,10 +1,7 @@
-from collections import defaultdict
-import os
-import json
 import openai
-from typing import Dict, List
 
-# openai.api_key= os.getenv("OPENAI_API_KEY", "")
+from typing import Dict
+from collections import defaultdict
 
 EXAMPLE_HATCH_OUTPUT = f"""
 Green Drakes (Ephemera guttulata), Green Drake Dry Fly, 10-12, Olive body with gray wings and a touch of brown
@@ -25,7 +22,6 @@ Elk Hair Caddis, Hackle, Brown or grizzly rooster hackle
 Elk Hair Caddis, Wing, White or light gray calf body hair
 """
 
-
 GPT_PRICING = {
     "gpt-3.5-turbo": {
         "completion_tokens": 0.002,
@@ -33,8 +29,10 @@ GPT_PRICING = {
     }
 }
 
-def gpt_call(prompt, model: str = "gpt-3.5-turbo"):
-    # Generic wrapper for llm call
+def get_pulze_call(prompt, model: str = "gpt-3.5-turbo"):
+    """
+    Generic wrapper for a call to Pulze. 
+    """
     print("Calling Pulze...")
     response = openai.ChatCompletion.create(
         model=model,
@@ -53,7 +51,55 @@ def gpt_call(prompt, model: str = "gpt-3.5-turbo"):
 
 
 def generate_hatch_list(location: str, river: str, target_species: str, season: str) -> Dict[str, Dict]:
-    prompt = (
+    """
+    Generate a list of expected hatches and associated fly patterns based on user input
+    """
+    prompt = get_hatch_prompt(location, river, target_species, season)
+    
+    content = get_pulze_call(prompt).split("\n")
+    print(f"Retrieved the following from the llm: {content}")
+    hatches_to_patterns = defaultdict(list)
+    for pattern in content:
+        try:
+            parsed_pattern = pattern.split(', ')
+            hatches_to_patterns[parsed_pattern[0]].append({
+                "pattern": parsed_pattern[1],
+                "hook_size": parsed_pattern[2],
+                "description": parsed_pattern[3],
+            })
+        except Exception as e:
+            print(f"Unable to add pattern {pattern} due to unexpected format: {repr(e)}")
+
+    print(hatches_to_patterns)
+    return hatches_to_patterns
+
+    
+def generate_pattern_materials_list(hatches_to_patterns):
+    """
+    Generate a shopping list of materials from a previously generated list of recommended fly patterns
+    """
+    pattern_list_for_materials = "\n"
+    for hatch, patterns in hatches_to_patterns.items():
+        for pattern in patterns:
+            pattern_list_for_materials += hatch + ", " + pattern["pattern"] + ", Size " + pattern["hook_size"] + ", " + pattern["description"] + "\n"
+    
+    prompt = get_materials_prompt(pattern_list_for_materials)
+
+    llm_output = get_pulze_call(prompt).split("\n")
+    pattern_to_materials = defaultdict(list)
+    print(llm_output)
+    for line in llm_output:
+        try:
+            parsed_line = line.split(", ")
+            pattern_to_materials[parsed_line[0]].append(([parsed_line[1]], parsed_line[2]))
+        except Exception as e:
+            print(f"Unable to add material {line} due to unexpected format: {repr(e)}")
+
+    return pattern_to_materials
+
+
+def get_hatch_prompt(location: str, river: str, target_species: str, season: str):
+    return (
         f"""
         I am planning a fly-fishing trip to {location}, where I will be targeting {target_species} on the {river}. 
         The trip will be in {season}. Predict at least 5 of the insect hatches that will be going on in this area at this point in the season, 
@@ -66,63 +112,22 @@ def generate_hatch_list(location: str, river: str, target_species: str, season: 
         {EXAMPLE_HATCH_OUTPUT}
         """
     )
-    
-    content = gpt_call(prompt).split("\n")
-    print(content)
-    hatches_to_patterns = defaultdict(list)
-    for pattern in content:
-        # print(f"Retrieved pattern: {pattern}")
-        try:
-            parsed_pattern = pattern.split(', ')
-            hatches_to_patterns[parsed_pattern[0]].append({
-                "pattern": parsed_pattern[1],
-                "hook_size": parsed_pattern[2],
-                "description": parsed_pattern[3],
-            })
-        except Exception as e:
-            print(f"Unable to add pattern due to unexpected format: {repr(e)}")
-            print(f"Failing pattern: {pattern}")
 
-    print(hatches_to_patterns)
-    return hatches_to_patterns
+def get_materials_prompt(pattern_list_for_materials):
+    return f"""
+        Generate and combine a complete shopping list of materials for a list of fly fishing patterns. Do not include any other headers or information, only the cumulative list of recommended materials.
+        Format each line of the output in the following format:
 
-    
-def generate_pattern_materials_list(hatches_to_patterns):
-    pattern_list_for_materials = "\n"
-    for hatch, patterns in hatches_to_patterns.items():
-        for pattern in patterns:
-            pattern_list_for_materials += hatch + ", " + pattern["pattern"] + ", Size " + pattern["hook_size"] + ", " + pattern["description"] + "\n"
-    
+        Pattern, Component, Description
 
-    prompt = f"""
-Generate and combine a complete shopping list of materials for a list of fly fishing patterns. Do not include any other headers or information, only the cumulative list of recommended materials.
-Format each line of the output in the following format:
+        An example input list and desired output is given below:
 
-Pattern, Component, Description
+        Example fly pattern: 
+        Caddisflies, Elk Hair Caddis, Size 14-18, Light tan or brown body with elk hair wings and a brown hackle
 
-An example input list and desired output is given below:
+        Example output:
+        {EXAMPLE_MATERIALS_OUTPUT}
 
-Example fly pattern: 
-Caddisflies, Elk Hair Caddis, Size 14-18, Light tan or brown body with elk hair wings and a brown hackle
-
-Example output:
-{EXAMPLE_MATERIALS_OUTPUT}
-
-Generate the material shopping list for the following list of patterns:
-{pattern_list_for_materials}
-"""
-
-    print(prompt)
-
-    llm_output = gpt_call(prompt).split("\n")
-    pattern_to_materials = defaultdict(list)
-    print(llm_output)
-    for line in llm_output:
-        try:
-            parsed_line = line.split(", ")
-            pattern_to_materials[parsed_line[0]].append(([parsed_line[1]], parsed_line[2]))
-        except Exception as e:
-            print(f"Unable to add material due to unexpected format: {repr(e)}")
-            print(f"Failing material: {line}")
-
-    return pattern_to_materials
+        Generate the material shopping list for the following list of patterns:
+        {pattern_list_for_materials}
+        """
