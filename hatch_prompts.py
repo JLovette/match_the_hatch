@@ -1,7 +1,11 @@
 import openai
+import json
+import requests
 
 from typing import Dict
 from collections import defaultdict
+
+PULZE_API_BASE = "https://api.pulze.ai/v1"
 
 EXAMPLE_HATCH_OUTPUT = f"""
 Green Drakes (Ephemera guttulata), Green Drake Dry Fly, 10-12, Olive body with gray wings and a touch of brown
@@ -29,35 +33,62 @@ GPT_PRICING = {
     }
 }
 
-def get_pulze_call(prompt, model: str = "gpt-3.5-turbo"):
+
+def get_pulze_call(prompt, api_key, labels = {}):
     """
     Generic wrapper for a call to Pulze. 
     """
     print("Calling Pulze...")
+    try:
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "Pulze-Labels": json.dumps(labels),
+            "Pulze-Weights": json.dumps({
+                "cost": 0,
+                "quality": 1.0,
+                "latency": 0
+            })
+        }
+        payload = {
+            "prompt": prompt,
+            "messages": [{"role": "user", "content": prompt}],
+            "best_of": 3,
+            "temperature": 1
+        }
+        response = requests.request("POST", PULZE_API_BASE + "/chat/completions", headers=headers, json=payload).json()
+        print(response)
+        print(f"Pulze returned {len(response.get('choices'))} options, picking the best one...")
+        llm_output = response.get('choices')[0].get('message')
+        return llm_output["content"]
+    except Exception as e:
+        print(f"Unable to use pulze's chat completion: {repr(e)}")
+        return get_openai_call(prompt)
+        
+def get_openai_call(prompt):
     response = openai.ChatCompletion.create(
-        model=model,
-        messages=[
-            {"role": "user", "content": prompt}
-        ]
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": prompt}],
     )
-
     llm_output = response.choices[0].message
-    if model in GPT_PRICING:
-        prompt_cost = (response['usage']['prompt_tokens'] / 1000 * GPT_PRICING.get(model).get("prompt_tokens"))
-        completion_cost = (response['usage']['completion_tokens'] / 1000 * GPT_PRICING.get(model).get("completion_tokens"))
-        print(f"Prompt Cost: ${round(prompt_cost + completion_cost, 5)}")
-
     return llm_output["content"]
 
-
-def generate_hatch_list(location: str, river: str, target_species: str, season: str) -> Dict[str, Dict]:
+def generate_hatch_list(location: str, river: str, target_species: str, season: str, api_key) -> Dict[str, Dict]:
     """
     Generate a list of expected hatches and associated fly patterns based on user input
     """
     prompt = get_hatch_prompt(location, river, target_species, season)
     
-    content = get_pulze_call(prompt).split("\n")
+    content = get_pulze_call(prompt, api_key, labels={"prompt_type": "hatch_list"}).split("\n")
     print(f"Retrieved the following from the llm: {content}")
+    hatches_to_patterns = llm_hatches_to_dict(content)
+    if not len(hatches_to_patterns):
+        content = get_openai_call(prompt)
+        hatches_to_patterns = llm_hatches_to_dict(content)
+    print(hatches_to_patterns)
+    return hatches_to_patterns
+
+def llm_hatches_to_dict(content):
     hatches_to_patterns = defaultdict(list)
     for pattern in content:
         try:
@@ -69,12 +100,9 @@ def generate_hatch_list(location: str, river: str, target_species: str, season: 
             })
         except Exception as e:
             print(f"Unable to add pattern {pattern} due to unexpected format: {repr(e)}")
-
-    print(hatches_to_patterns)
     return hatches_to_patterns
-
     
-def generate_pattern_materials_list(hatches_to_patterns):
+def generate_pattern_materials_list(hatches_to_patterns, api_key):
     """
     Generate a shopping list of materials from a previously generated list of recommended fly patterns
     """
@@ -85,7 +113,7 @@ def generate_pattern_materials_list(hatches_to_patterns):
     
     prompt = get_materials_prompt(pattern_list_for_materials)
 
-    llm_output = get_pulze_call(prompt).split("\n")
+    llm_output = get_pulze_call(prompt, api_key, labels={"prompt_type": "materials_list"}).split("\n")
     pattern_to_materials = defaultdict(list)
     print(llm_output)
     for line in llm_output:

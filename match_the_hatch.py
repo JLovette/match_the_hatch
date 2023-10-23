@@ -1,7 +1,5 @@
-import os
-import time
-import openai
 import random
+import openai
 import pandas as pd
 import streamlit as st
 from hatch_prompts import generate_hatch_list, generate_pattern_materials_list
@@ -58,7 +56,7 @@ def display_trip_recs(state, body_of_water, target_species, season):
             st.session_state['selected_trip'] = trip_key
         else:
             with st.spinner(loading_messages[random.randint(0, len(loading_messages) - 1)]):
-                hatches = generate_hatch_list(state, body_of_water, target_species, season)
+                hatches = generate_hatch_list(state, body_of_water, target_species, season, st.session_state["api_key"])
                 st.session_state['trips'][trip_key] = {
                     "hatches": hatches,
                     "state": state,
@@ -72,11 +70,12 @@ def display_trip_recs(state, body_of_water, target_species, season):
 # Require Pulze API key on initial load
 if not st.session_state["api_key"]:
     with st.form("api_key_submission"):
-        api_key = st.text_input('API Key', placeholder='Pulze API Key')
+        api_key = st.text_input('Pulze API Key', placeholder='Pulze API Key')
+        open_ai_api_key = st.text_input('OpenAI API Key', placeholder='Fall-back OpenAI API Key')
         submitted = st.form_submit_button("Submit")
         if submitted:
             st.session_state["api_key"] = api_key
-            openai.api_key = api_key
+            openai.api_key = open_ai_api_key
             st.rerun()
 else:
     main_col1, main_col2 = st.columns(2)
@@ -150,7 +149,7 @@ else:
                     submitted = st.form_submit_button("Generate Materials List")
                     if submitted:
                         with st.spinner(loading_messages[random.randint(0, len(loading_messages) - 1)]):
-                            patterns_to_materials = generate_pattern_materials_list(selected_trip.get("hatches"))
+                            patterns_to_materials = generate_pattern_materials_list(selected_trip.get("hatches"), api_key=st.session_state["api_key"])
                             st.session_state["trips"][st.session_state["selected_trip"]]["materials"] = patterns_to_materials
                             st.success('Done!')
                             st.rerun()
