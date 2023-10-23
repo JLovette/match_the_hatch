@@ -51,13 +51,12 @@ def get_pulze_call(prompt, api_key, labels = {}):
             })
         }
         payload = {
-            "prompt": prompt,
+            "prompt": prompt,  # Pulze doesn't seem to respond to 'prompt' data field: https://docs.pulze.ai/api-reference/chat-completions
             "messages": [{"role": "user", "content": prompt}],
             "best_of": 3,
             "temperature": 1
         }
         response = requests.request("POST", PULZE_API_BASE + "/chat/completions", headers=headers, json=payload).json()
-        print(response)
         print(f"Pulze returned {len(response.get('choices'))} options, picking the best one...")
         llm_output = response.get('choices')[0].get('message')
         return llm_output["content"]
@@ -80,24 +79,27 @@ def generate_hatch_list(location: str, river: str, target_species: str, season: 
     prompt = get_hatch_prompt(location, river, target_species, season)
     
     content = get_pulze_call(prompt, api_key, labels={"prompt_type": "hatch_list"}).split("\n")
-    print(f"Retrieved the following from the llm: {content}")
     hatches_to_patterns = llm_hatches_to_dict(content)
     if not len(hatches_to_patterns):
+        print("Calling openai instead...")
         content = get_openai_call(prompt)
         hatches_to_patterns = llm_hatches_to_dict(content)
     print(hatches_to_patterns)
     return hatches_to_patterns
 
 def llm_hatches_to_dict(content):
-    hatches_to_patterns = defaultdict(list)
+    hatches_to_patterns = {}
     for pattern in content:
         try:
             parsed_pattern = pattern.split(', ')
-            hatches_to_patterns[parsed_pattern[0]].append({
+            fly_info = {
                 "pattern": parsed_pattern[1],
                 "hook_size": parsed_pattern[2],
                 "description": parsed_pattern[3],
-            })
+            }
+            if not hatches_to_patterns[parsed_pattern[0]]:
+                hatches_to_patterns[parsed_pattern[0]] = []
+            hatches_to_patterns[parsed_pattern[0]].append(fly_info)
         except Exception as e:
             print(f"Unable to add pattern {pattern} due to unexpected format: {repr(e)}")
     return hatches_to_patterns

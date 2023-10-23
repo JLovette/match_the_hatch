@@ -70,8 +70,9 @@ def display_trip_recs(state, body_of_water, target_species, season):
 # Require Pulze API key on initial load
 if not st.session_state["api_key"]:
     with st.form("api_key_submission"):
+        st.write("Enter the following api keys. An OpenAI key is requested in addition to the Pulze key as a fallback")
         api_key = st.text_input('Pulze API Key', placeholder='Pulze API Key')
-        open_ai_api_key = st.text_input('OpenAI API Key', placeholder='Fall-back OpenAI API Key')
+        open_ai_api_key = st.text_input('OpenAI API Key', placeholder='OpenAI API Key')
         submitted = st.form_submit_button("Submit")
         if submitted:
             st.session_state["api_key"] = api_key
