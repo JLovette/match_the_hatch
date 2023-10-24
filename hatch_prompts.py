@@ -26,14 +26,6 @@ Elk Hair Caddis, Hackle, Brown or grizzly rooster hackle
 Elk Hair Caddis, Wing, White or light gray calf body hair
 """
 
-GPT_PRICING = {
-    "gpt-3.5-turbo": {
-        "completion_tokens": 0.002,
-        "prompt_tokens": 0.0015
-    }
-}
-
-
 def get_pulze_call(prompt, api_key, labels = {}):
     """
     Generic wrapper for a call to Pulze. 
@@ -59,11 +51,13 @@ def get_pulze_call(prompt, api_key, labels = {}):
         response = requests.request("POST", PULZE_API_BASE + "/chat/completions", headers=headers, json=payload).json()
         print(f"Pulze returned {len(response.get('choices'))} options, picking the best one...")
         llm_output = response.get('choices')[0].get('message')
+        print(f"Pulze response: {llm_output}")
         return llm_output["content"]
     except Exception as e:
         print(f"Unable to use pulze's chat completion: {repr(e)}")
         return get_openai_call(prompt)
-        
+
+    
 def get_openai_call(prompt):
     response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
@@ -71,6 +65,7 @@ def get_openai_call(prompt):
     )
     llm_output = response.choices[0].message
     return llm_output["content"]
+
 
 def generate_hatch_list(location: str, river: str, target_species: str, season: str, api_key) -> Dict[str, Dict]:
     """
@@ -82,10 +77,11 @@ def generate_hatch_list(location: str, river: str, target_species: str, season: 
     hatches_to_patterns = llm_hatches_to_dict(content)
     if not len(hatches_to_patterns):
         print("Calling openai instead...")
-        content = get_openai_call(prompt)
+        content = get_openai_call(prompt).split("\n")
         hatches_to_patterns = llm_hatches_to_dict(content)
     print(hatches_to_patterns)
     return hatches_to_patterns
+
 
 def llm_hatches_to_dict(content):
     hatches_to_patterns = {}
@@ -97,13 +93,14 @@ def llm_hatches_to_dict(content):
                 "hook_size": parsed_pattern[2],
                 "description": parsed_pattern[3],
             }
-            if not hatches_to_patterns[parsed_pattern[0]]:
+            if not hatches_to_patterns.get(parsed_pattern[0], None):
                 hatches_to_patterns[parsed_pattern[0]] = []
             hatches_to_patterns[parsed_pattern[0]].append(fly_info)
         except Exception as e:
             print(f"Unable to add pattern {pattern} due to unexpected format: {repr(e)}")
     return hatches_to_patterns
-    
+
+
 def generate_pattern_materials_list(hatches_to_patterns, api_key):
     """
     Generate a shopping list of materials from a previously generated list of recommended fly patterns
@@ -143,8 +140,10 @@ def get_hatch_prompt(location: str, river: str, target_species: str, season: str
         """
     )
 
+
 def get_materials_prompt(pattern_list_for_materials):
-    return f"""
+    return (
+        f"""
         Generate and combine a complete shopping list of materials for a list of fly fishing patterns. Do not include any other headers or information, only the cumulative list of recommended materials.
         Format each line of the output in the following format:
 
@@ -161,3 +160,4 @@ def get_materials_prompt(pattern_list_for_materials):
         Generate the material shopping list for the following list of patterns:
         {pattern_list_for_materials}
         """
+    )
